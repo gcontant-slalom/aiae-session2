@@ -202,6 +202,19 @@ describe('App Component', () => {
     expect(await screen.findByText('Task added to your board.')).toBeInTheDocument();
   });
 
+  test('shows validation feedback when the task title is missing', async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    expect(await screen.findByText('Write planning notes')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Add task' }));
+
+    expect(await screen.findByText('Task title is required')).toBeInTheDocument();
+    expect(screen.queryByText('Task added to your board.')).not.toBeInTheDocument();
+  });
+
   test('filters and searches tasks', async () => {
     const user = userEvent.setup();
 
