@@ -1,11 +1,13 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "Node.js backend with in-memory database",
+  "description": "Node.js backend with persistent SQLite storage",
   "main": "src/index.js",
   "scripts": {
     "start": "nodemon src/index.js",
-    "test": "jest --detectOpenHandles"
+    "lint": "eslint \"src/**/*.js\" \"__tests__/**/*.js\"",
+    "test": "jest --detectOpenHandles",
+    "test:integration": "jest --detectOpenHandles"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",

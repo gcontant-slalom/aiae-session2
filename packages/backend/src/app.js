@@ -1,98 +1,125 @@
-const express = require('express');
 const cors = require('cors');
+const express = require('express');
 const morgan = require('morgan');
-const Database = require('better-sqlite3');
 
-// Initialize express app
+const { db, resetDatabase } = require('./database');
+const {
+  clearCompletedTasks,
+  createTask,
+  deleteTask,
+  getTaskById,
+  listTasks,
+  updateTask,
+} = require('./taskRepository');
+const {
+  parseTaskFilters,
+  parseTaskId,
+  validateCreateTask,
+  validateTaskUpdate,
+} = require('./taskValidation');
+
 const app = express();
 
-// Middleware
 app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
 
-// Initialize in-memory SQLite database
-const db = new Database(':memory:');
+function sendServerError(res, message, error) {
+  console.error(message, error);
+  res.status(500).json({ error: message });
+}
 
-// Create tables
-db.exec(`
-  CREATE TABLE IF NOT EXISTS items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-  )
-`);
-
-// Insert some initial data
-const initialItems = ['Item 1', 'Item 2', 'Item 3'];
-const insertStmt = db.prepare('INSERT INTO items (name) VALUES (?)');
-
-initialItems.forEach(item => {
-  insertStmt.run(item);
-});
-
-console.log('In-memory database initialized with sample data');
-
-// Health check endpoint
 app.get('/', (req, res) => {
   res.status(200).json({ status: 'ok', message: 'Backend server is running' });
 });
 
-// API Routes
-app.get('/api/items', (req, res) => {
+app.get('/api/tasks', (req, res) => {
+  const { filters, error } = parseTaskFilters(req.query);
+
+  if (error) {
+    return res.status(400).json({ error });
+  }
+
   try {
-    const items = db.prepare('SELECT * FROM items ORDER BY created_at DESC').all();
-    res.json(items);
-  } catch (error) {
-    console.error('Error fetching items:', error);
-    res.status(500).json({ error: 'Failed to fetch items' });
+    res.json(listTasks(filters));
+  } catch (requestError) {
+    sendServerError(res, 'Failed to fetch tasks', requestError);
   }
 });
 
-app.post('/api/items', (req, res) => {
+app.post('/api/tasks', (req, res) => {
+  const { task, error } = validateCreateTask(req.body);
+
+  if (error) {
+    return res.status(400).json({ error });
+  }
+
   try {
-    const { name } = req.body;
-
-    if (!name || typeof name !== 'string' || name.trim() === '') {
-      return res.status(400).json({ error: 'Item name is required' });
-    }
-
-    const result = insertStmt.run(name);
-    const id = result.lastInsertRowid;
-
-    const newItem = db.prepare('SELECT * FROM items WHERE id = ?').get(id);
-    res.status(201).json(newItem);
-  } catch (error) {
-    console.error('Error creating item:', error);
-    res.status(500).json({ error: 'Failed to create item' });
+    const createdTask = createTask(task);
+    res.status(201).json(createdTask);
+  } catch (requestError) {
+    sendServerError(res, 'Failed to create task', requestError);
   }
 });
 
-app.delete('/api/items/:id', (req, res) => {
+app.patch('/api/tasks/:id', (req, res) => {
+  const taskId = parseTaskId(req.params.id);
+
+  if (!taskId) {
+    return res.status(400).json({ error: 'Valid task ID is required' });
+  }
+
+  const { updates, error } = validateTaskUpdate(req.body);
+
+  if (error) {
+    return res.status(400).json({ error });
+  }
+
   try {
-    const { id } = req.params;
+    const existingTask = getTaskById(taskId);
 
-    if (!id || isNaN(parseInt(id))) {
-      return res.status(400).json({ error: 'Valid item ID is required' });
+    if (!existingTask) {
+      return res.status(404).json({ error: 'Task not found' });
     }
 
-    const existingItem = db.prepare('SELECT * FROM items WHERE id = ?').get(id);
-    if (!existingItem) {
-      return res.status(404).json({ error: 'Item not found' });
-    }
-
-    const deleteStmt = db.prepare('DELETE FROM items WHERE id = ?');
-    const result = deleteStmt.run(id);
-
-    if (result.changes > 0) {
-      res.json({ message: 'Item deleted successfully', id: parseInt(id) });
-    } else {
-      res.status(404).json({ error: 'Item not found' });
-    }
-  } catch (error) {
-    console.error('Error deleting item:', error);
-    res.status(500).json({ error: 'Failed to delete item' });
+    res.json(updateTask(taskId, updates));
+  } catch (requestError) {
+    sendServerError(res, 'Failed to update task', requestError);
   }
 });
 
-module.exports = { app, db, insertStmt };
+app.delete('/api/tasks/completed', (req, res) => {
+  try {
+    const deletedCount = clearCompletedTasks();
+
+    res.json({
+      message: 'Completed tasks cleared successfully',
+      deletedCount,
+    });
+  } catch (requestError) {
+    sendServerError(res, 'Failed to clear completed tasks', requestError);
+  }
+});
+
+app.delete('/api/tasks/:id', (req, res) => {
+  const taskId = parseTaskId(req.params.id);
+
+  if (!taskId) {
+    return res.status(400).json({ error: 'Valid task ID is required' });
+  }
+
+  try {
+    const existingTask = getTaskById(taskId);
+
+    if (!existingTask) {
+      return res.status(404).json({ error: 'Task not found' });
+    }
+
+    deleteTask(taskId);
+    res.json({ message: 'Task deleted successfully', id: taskId });
+  } catch (requestError) {
+    sendServerError(res, 'Failed to delete task', requestError);
+  }
+});
+
+module.exports = { app, db, resetDatabase };
