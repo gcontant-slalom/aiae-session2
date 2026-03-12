@@ -7,7 +7,7 @@
     "start": "nodemon src/index.js",
     "lint": "eslint \"src/**/*.js\" \"__tests__/**/*.js\"",
     "test": "jest --detectOpenHandles",
-    "test:integration": "jest --detectOpenHandles"
+    "test:integration": "jest --detectOpenHandles --runInBand __tests__/integration"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",
